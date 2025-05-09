@@ -29,3 +29,6 @@ xcuserdata/
 
 #QtCreator
 CMakeLists.txt.user
+
+# Ignore AO2D.root files everywhere
+AO2D.root
