@@ -14,3 +14,21 @@ o2physics_add_dpl_workflow(my-example-task
                   SOURCES myExampleTask.cxx
                   PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
                   COMPONENT_NAME AnalysisTutorial)
+
+# Hands-on session 3
+o2physics_add_dpl_workflow(my-example-task-new
+                  SOURCES myExampleTaskNew.cxx
+                  PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+                  COMPONENT_NAME AnalysisTutorial)
+
+# My custom PID analysis
+o2physics_add_dpl_workflow(my-example-task-pid
+                  SOURCES myExampleTaskPid.cxx
+                  PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+                  COMPONENT_NAME AnalysisTutorial)
+
+# My custom PID feature extractor
+o2physics_add_dpl_workflow(my-example-task-pid-feature-extractor
+                  SOURCES PIDFeatureExtractor/PIDFeatureExtractor.cxx
+                  PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+                  COMPONENT_NAME AnalysisTutorial)
