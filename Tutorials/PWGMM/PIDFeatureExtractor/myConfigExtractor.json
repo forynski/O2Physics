@@ -44,7 +44,11 @@
     "grp-mag-path": "GLO/Config/GRPMagField",
     "mVtxPath": "GLO/Calib/MeanVertex",
     "geo-path": "GLO/Config/GeometryAligned",
-    "minPropagationDistance": 83.0999985
+    "useMatLUT": 0,
+    "processStandard": 1,
+    "processCovariance": 0,
+    "processCovarianceMc": 0,
+    "minPropagationDistance": 83.1
   },
 
   "pid-tpc-base": {
