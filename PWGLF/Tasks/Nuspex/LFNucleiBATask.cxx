@@ -20,14 +20,16 @@
 #include "PWGLF/DataModel/LFNucleiTables.h"
 #include "PWGLF/DataModel/LFParticleIdentification.h"
 #include "PWGLF/DataModel/mcCentrality.h"
+#include "PWGLF/Utils/inelGt.h"
 
 #include "Common/CCDB/EventSelectionParams.h"
 #include "Common/Core/trackUtilities.h"
 #include "Common/DataModel/Centrality.h"
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/Multiplicity.h"
-#include "Common/DataModel/PIDResponse.h"
 #include "Common/DataModel/PIDResponseITS.h"
+#include "Common/DataModel/PIDResponseTOF.h"
+#include "Common/DataModel/PIDResponseTPC.h"
 #include "Common/DataModel/TrackSelectionTables.h"
 #include "EventFiltering/Zorro.h"
 #include "EventFiltering/ZorroSummary.h"
@@ -37,6 +39,7 @@
 #include "Framework/AnalysisDataModel.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/HistogramRegistry.h"
+#include "Framework/O2DatabasePDGPlugin.h"
 #include "Framework/runDataProcessing.h"
 #include "ReconstructionDataFormats/PID.h"
 #include "ReconstructionDataFormats/Track.h"
@@ -55,6 +58,7 @@ using namespace o2::framework::expressions;
 
 struct LFNucleiBATask {
   Service<o2::ccdb::BasicCCDBManager> ccdb;
+  Service<o2::framework::O2DatabasePDG> pdgDB;
 
   Zorro zorro;
   OutputObj<ZorroSummary> zorroSummary{"zorroSummary"};
@@ -69,6 +73,7 @@ struct LFNucleiBATask {
   HistogramRegistry debugHistos{"debugHistos", {}, OutputObjHandlingPolicy::AnalysisObject, false, false};
   HistogramRegistry evtimeHistos{"evtimeHistos", {}, OutputObjHandlingPolicy::AnalysisObject, false, false};
   HistogramRegistry evLossHistos{"evLossHistos", {}, OutputObjHandlingPolicy::AnalysisObject, false, false};
+  HistogramRegistry histoGen{"histoGen", {}, OutputObjHandlingPolicy::AnalysisObject, false, true};
 
   // Enable particle for analysis
   Configurable<bool> enablePr{"enablePr", true, "Flag to enable proton analysis."};
@@ -330,17 +335,29 @@ struct LFNucleiBATask {
       LOG(fatal) << "Can't enable processData and processMCReco in the same time, pick one!";
     }
     if (doprocessEvSgLossMC) {
-      evLossHistos.add<TH1>("evLoss/hEvent", "Event loss histograms; ; counts", HistType::kTH1F, {{3, 0., 3.}});
+      evLossHistos.add<TH1>("evLoss/hEvent", "Event loss histograms; ; counts", HistType::kTH1F, {{4, 0., 4.}});
       evLossHistos.get<TH1>(HIST("evLoss/hEvent"))->GetXaxis()->SetBinLabel(1, "All Gen.");
       evLossHistos.get<TH1>(HIST("evLoss/hEvent"))->GetXaxis()->SetBinLabel(2, "TVX (reco.)");
-      evLossHistos.get<TH1>(HIST("evLoss/hEvent"))->GetXaxis()->SetBinLabel(3, "Sel8 (reco.)");
+      evLossHistos.get<TH1>(HIST("evLoss/hEvent"))->GetXaxis()->SetBinLabel(3, "MC Sel8 (TVX + NoTFB) (reco.)");
+      evLossHistos.get<TH1>(HIST("evLoss/hEvent"))->GetXaxis()->SetBinLabel(4, "Sel8 (reco.)");
 
       evLossHistos.add<TH1>("evLoss/pt/hDeuteronTriggeredTVX", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
       evLossHistos.add<TH1>("evLoss/pt/hDeuteronTriggeredSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hDeuteronTriggeredMCSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
       evLossHistos.add<TH1>("evLoss/pt/hDeuteronGen", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
       evLossHistos.add<TH1>("evLoss/pt/hAntiDeuteronTriggeredTVX", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hAntiDeuteronTriggeredMCSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
       evLossHistos.add<TH1>("evLoss/pt/hAntiDeuteronTriggeredSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
       evLossHistos.add<TH1>("evLoss/pt/hAntiDeuteronGen", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+
+      evLossHistos.add<TH1>("evLoss/pt/hHeliumTriggeredTVX", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hHeliumTriggeredSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hHeliumTriggeredMCSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hHeliumGen", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hAntiHeliumTriggeredTVX", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hAntiHeliumTriggeredSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hAntiHeliumTriggeredMCSel8", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
+      evLossHistos.add<TH1>("evLoss/pt/hAntiHeliumGen", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{100, 0., 5.}});
     }
     if (doprocessMCRecoLfPidEv) {
       spectraGen.add<TH1>("LfEv/pT_nocut", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
@@ -356,7 +373,13 @@ struct LFNucleiBATask {
       spectraGen.add<TH1>("LfEv/helium/pT_ITSROFBorder_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
       spectraGen.add<TH1>("LfEv/helium/pT_sel8_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
       spectraGen.add<TH1>("LfEv/helium/pT_MCsel8_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
-      spectraGen.add<TH1>("LfEv/helium/pT_MCsel8_HePrim", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_nocut_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_TVXtrigger_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_TFrameBorder_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_ITSROFBorder_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_sel8_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_MCsel8_He", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
 
       spectraGen.add<TH1>("LfEv/helium/pT_nocut_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
       spectraGen.add<TH1>("LfEv/helium/pT_TVXtrigger_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
@@ -364,7 +387,64 @@ struct LFNucleiBATask {
       spectraGen.add<TH1>("LfEv/helium/pT_ITSROFBorder_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
       spectraGen.add<TH1>("LfEv/helium/pT_sel8_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
       spectraGen.add<TH1>("LfEv/helium/pT_MCsel8_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
-      spectraGen.add<TH1>("LfEv/helium/pT_MCsel8_antiHePrim", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_nocut_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_TVXtrigger_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_TFrameBorder_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_ITSROFBorder_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_sel8_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+      spectraGen.add<TH1>("LfEv/helium/prim/pT_MCsel8_antiHe", "Track #it{p}_{T}; #it{p}_{T} (GeV/#it{c}); counts", HistType::kTH1F, {{ptHeAxis}});
+    }
+
+    if (doprocessMCGenLosses) {
+      histoGen.add("events/hMCGen", "hMCGen", {HistType::kTH1D, {{3, 0.f, 3.f}}});
+      histoGen.get<TH1>(HIST("events/hMCGen"))->GetXaxis()->SetBinLabel(1, "All");
+      histoGen.get<TH1>(HIST("events/hMCGen"))->GetXaxis()->SetBinLabel(2, "Vtz");
+      histoGen.get<TH1>(HIST("events/hMCGen"))->GetXaxis()->SetBinLabel(3, "INELgt0");
+
+      histoGen.add("events/hMCGenReco", "hMCGenReco", {HistType::kTH1D, {{2, 0.f, 2.f}}});
+      histoGen.get<TH1>(HIST("events/hMCGenReco"))->GetXaxis()->SetBinLabel(1, "INEL");
+      histoGen.get<TH1>(HIST("events/hMCGenReco"))->GetXaxis()->SetBinLabel(2, "INELgt0");
+
+      histoGen.add("events/hMCReco", "hMCReco", {HistType::kTH1D, {{3, 0.f, 3.f}}});
+      histoGen.get<TH1>(HIST("events/hMCReco"))->GetXaxis()->SetBinLabel(1, "All");
+      histoGen.get<TH1>(HIST("events/hMCReco"))->GetXaxis()->SetBinLabel(2, "Ev sel passed");
+      histoGen.get<TH1>(HIST("events/hMCReco"))->GetXaxis()->SetBinLabel(3, "INELgt0");
+
+      histoGen.add("helium/MCGen/ptGen_INEL_Prim_He", "generated particles", HistType::kTH1F, {ptHeAxis});
+      histoGen.add("helium/MCGen/ptGen_INEL_Prim_antiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
+
+      histoGen.add("helium/MCGen/ptGen_INELgt0_Prim_He", "generated particles", HistType::kTH1F, {ptHeAxis});
+      histoGen.add("helium/MCGen/ptGen_INELgt0_Prim_antiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
+
+      histoGen.add("helium/MCGenReco/ptGen_INEL_Prim_He", "generated particles", HistType::kTH1F, {ptHeAxis});
+      histoGen.add("helium/MCGenReco/ptGen_INEL_Prim_antiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
+
+      histoGen.add("helium/MCGenReco/ptGen_INELgt0_Prim_He", "generated particles", HistType::kTH1F, {ptHeAxis});
+      histoGen.add("helium/MCGenReco/ptGen_INELgt0_Prim_antiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
+
+      histoGen.add("helium/MCReco/ptGen_INEL_Prim_He", "generated particles", HistType::kTH1F, {ptHeAxis});
+      histoGen.add("helium/MCReco/ptGen_INEL_Prim_antiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
+
+      histoGen.add("helium/MCReco/ptGen_INELgt0_Prim_He", "generated particles", HistType::kTH1F, {ptHeAxis});
+      histoGen.add("helium/MCReco/ptGen_INELgt0_Prim_antiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
+
+      if (enableCentrality) {
+        histoGen.add("helium/MCGen/ptGenVsMult_INEL_Prim_He", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCGen/ptGenVsMult_INEL_Prim_antiHe", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCGen/ptGenVsMult_INELgt0_Prim_He", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCGen/ptGenVsMult_INELgt0_Prim_antiHe", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+
+        histoGen.add("helium/MCGenReco/ptGenVsMult_INEL_Prim_He", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCGenReco/ptGenVsMult_INEL_Prim_antiHe", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCGenReco/ptGenVsMult_INELgt0_Prim_He", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCGenReco/ptGenVsMult_INELgt0_Prim_antiHe", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+
+        histoGen.add("helium/MCReco/ptGenVsMult_INEL_Prim_He", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCReco/ptGenVsMult_INEL_Prim_antiHe", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCReco/ptGenVsMult_INELgt0_Prim_He", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        histoGen.add("helium/MCReco/ptGenVsMult_INELgt0_Prim_antiHe", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+      }
     }
 
     if (enableDebug) {
@@ -419,7 +499,7 @@ struct LFNucleiBATask {
     }
 
     if (enableCentrality)
-      histos.add<TH2>("event/h1VtxZ", "V_{z};V_{z} (in cm); counts", HistType::kTH1F, {{1500, -15, 15}, {binsPercentile, "Centrality FT0M"}});
+      histos.add<TH2>("event/h1VtxZ", "V_{z};V_{z} (in cm); counts", HistType::kTH2F, {{1500, -15, 15}, {binsPercentile, "Centrality FT0M"}});
     else
       histos.add<TH1>("event/h1VtxZ", "V_{z};V_{z} (in cm); counts", HistType::kTH1F, {{1500, -15, 15}});
 
@@ -689,11 +769,11 @@ struct LFNucleiBATask {
     }
     if (doprocessMCReco || doprocessMCRecoLfPid || doprocessMCRecoFiltered || doprocessMCRecoFilteredLight) {
 
-      histos.add<TH1>("hItsDeHeChecker", "d and {}^{3}He counters", HistType::kTH1F, {{4, -0.5, 3.5}});
-      histos.get<TH1>(HIST("hItsDeHeChecker"))->GetXaxis()->SetBinLabel(1, "totDe");
-      histos.get<TH1>(HIST("hItsDeHeChecker"))->GetXaxis()->SetBinLabel(2, "totHe");
-      histos.get<TH1>(HIST("hItsDeHeChecker"))->GetXaxis()->SetBinLabel(3, "keptDe");
-      histos.get<TH1>(HIST("hItsDeHeChecker"))->GetXaxis()->SetBinLabel(4, "keptHe");
+      histos.add<TH1>("tracks/hItsDeHeChecker", "d and {}^{3}He counters", HistType::kTH1F, {{4, -0.5, 3.5}});
+      histos.get<TH1>(HIST("tracks/hItsDeHeChecker"))->GetXaxis()->SetBinLabel(1, "totDe");
+      histos.get<TH1>(HIST("tracks/hItsDeHeChecker"))->GetXaxis()->SetBinLabel(2, "totHe");
+      histos.get<TH1>(HIST("tracks/hItsDeHeChecker"))->GetXaxis()->SetBinLabel(3, "keptDe");
+      histos.get<TH1>(HIST("tracks/hItsDeHeChecker"))->GetXaxis()->SetBinLabel(4, "keptHe");
 
       // inclusive production
       if (enableTrackingEff) {
@@ -1849,8 +1929,8 @@ struct LFNucleiBATask {
       }
       if (enableHe) {
         if (enableCentrality) {
-          histos.add<TH3>("tracks/helium/h3TOFmass2antiHeliumVsPtVsMult", "#Delta M^{2} (#bar{He}) vs #it{p}_{T}/z; #Delta M^{2} (#bar{He}); #it{p}_{T}/z (GeV/#it{c})", HistType::kTH3F, {{massHeAxis}, {ptZHeAxis}, {binsPercentile}});
           histos.add<TH3>("tracks/helium/h3TOFmass2HeliumVsPtVsMult", "#Delta M^{2} (He) vs #it{p}_{T}/z; #Delta M^{2} (He); #it{p}_{T}/z (GeV/#it{c})", HistType::kTH3F, {{massHeAxis}, {ptZHeAxis}, {binsPercentile}});
+          histos.add<TH3>("tracks/helium/h3TOFmass2antiHeliumVsPtVsMult", "#Delta M^{2} (#bar{He}) vs #it{p}_{T}/z; #Delta M^{2} (#bar{He}); #it{p}_{T}/z (GeV/#it{c})", HistType::kTH3F, {{massHeAxis}, {ptZHeAxis}, {binsPercentile}});
         }
         histos.add<TH2>("tracks/helium/h2TOFmass2antiHeliumVsPt", "#Delta M^{2} (#bar{He}) vs #it{p}_{T}/z; #Delta M^{2} (#bar{He}); #it{p}_{T}/z (GeV/#it{c})", HistType::kTH2F, {{massHeAxis}, {ptZHeAxis}});
         histos.add<TH2>("tracks/helium/h2TOFmass2HeliumVsPt", "#Delta M^{2} (He) vs #it{p}_{T}/z; #Delta M^{2} (He); #it{p}_{T}/z (GeV/#it{c})", HistType::kTH2F, {{massHeAxis}, {ptZHeAxis}});
@@ -2162,14 +2242,14 @@ struct LFNucleiBATask {
       spectraGen.add("helium/histGenPtHe", "generated particles", HistType::kTH1F, {ptHeAxis});
       spectraGen.add("helium/histGenPtHePrim", "generated particles", HistType::kTH1F, {ptHeAxis});
       if (enableCentrality)
-        spectraGen.add("helium/histGenPtHePrim", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        spectraGen.add("helium/histGenPtHePrimVsMult", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
       spectraGen.add("helium/histGenPtHeSec", "generated particles", HistType::kTH1F, {ptHeAxis});
       spectraGen.add("helium/histSecTransportPtHe", "generated particles", HistType::kTH1F, {ptHeAxis});
 
       spectraGen.add("helium/histGenPtantiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
       spectraGen.add("helium/histGenPtantiHePrim", "generated particles", HistType::kTH1F, {ptHeAxis});
       if (enableCentrality)
-        spectraGen.add("helium/histGenPtantiHePrim", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
+        spectraGen.add("helium/histGenPtantiHePrimVsMult", "generated particles", HistType::kTH2F, {{ptHeAxis}, {binsPercentile}});
       spectraGen.add("helium/histGenPtantiHeSec", "generated particles", HistType::kTH1F, {ptHeAxis});
       spectraGen.add("helium/histSecTransportPtantiHe", "generated particles", HistType::kTH1F, {ptHeAxis});
     }
@@ -2584,9 +2664,9 @@ struct LFNucleiBATask {
       if constexpr (IsMC && !IsFilteredData) {
         int pdgCheck = track.mcParticle().pdgCode();
         if (std::abs(pdgCheck) == PDGDeuteron)
-          histos.fill(HIST("hItsDeHeChecker"), 0);
+          histos.fill(HIST("tracks/hItsDeHeChecker"), 0);
         if (std::abs(pdgCheck) == PDGHelium)
-          histos.fill(HIST("hItsDeHeChecker"), 1);
+          histos.fill(HIST("tracks/hItsDeHeChecker"), 1);
       }
 
       // nSigmaITSHe cut
@@ -2601,9 +2681,9 @@ struct LFNucleiBATask {
       if constexpr (IsMC && !IsFilteredData) {
         int pdgCheck = track.mcParticle().pdgCode();
         if (std::abs(pdgCheck) == PDGDeuteron)
-          histos.fill(HIST("hItsDeHeChecker"), 2);
+          histos.fill(HIST("tracks/hItsDeHeChecker"), 2);
         if (std::abs(pdgCheck) == PDGHelium)
-          histos.fill(HIST("hItsDeHeChecker"), 3);
+          histos.fill(HIST("tracks/hItsDeHeChecker"), 3);
       }
 
       isHe = isHelium && track.sign() > 0;
@@ -4951,6 +5031,8 @@ struct LFNucleiBATask {
           histos.fill(HIST("tracks/helium/h2TOFmassHeliumVsPt"), 2.f * massTOFhe, hePt);
           histos.fill(HIST("tracks/helium/h2TOFmassDeltaHeliumVsPt"), 2.f * massTOFhe - MassHeliumVal, hePt);
           histos.fill(HIST("tracks/helium/h2TOFmass2HeliumVsPt"), 2.f * massTOFhe * 2.f * massTOFhe - MassHeliumVal * MassHeliumVal, hePt);
+          if (enableCentrality)
+            histos.fill(HIST("tracks/helium/h3TOFmass2HeliumVsPtVsMult"), 2.f * massTOFantihe * 2.f * massTOFantihe - MassHeliumVal * MassHeliumVal, hePt, event.centFT0M());
           if (outFlagOptions.enableBetaCut && (track.beta() > cfgBetaCut)) {
             histos.fill(HIST("tracks/helium/h2TOFmassHeliumVsPt_BetaCut"), 2.f * massTOFhe, hePt);
             histos.fill(HIST("tracks/helium/h2TOFmass2HeliumVsPt_BetaCut"), 2.f * massTOFhe * 2.f * massTOFhe - MassHeliumVal * MassHeliumVal, hePt);
@@ -4964,6 +5046,8 @@ struct LFNucleiBATask {
           histos.fill(HIST("tracks/helium/h2TOFmassantiHeliumVsPt"), 2.f * massTOFantihe, antihePt);
           histos.fill(HIST("tracks/helium/h2TOFmassDeltaantiHeliumVsPt"), 2.f * massTOFantihe - MassHeliumVal, antihePt);
           histos.fill(HIST("tracks/helium/h2TOFmass2antiHeliumVsPt"), 2.f * massTOFantihe * 2.f * massTOFantihe - MassHeliumVal * MassHeliumVal, antihePt);
+          if (enableCentrality)
+            histos.fill(HIST("tracks/helium/h3TOFmass2antiHeliumVsPtVsMult"), 2.f * massTOFantihe * 2.f * massTOFantihe - MassHeliumVal * MassHeliumVal, antihePt, event.centFT0M());
           if (outFlagOptions.enableBetaCut && (track.beta() > cfgBetaCut)) {
             histos.fill(HIST("tracks/helium/h2TOFmassantiHeliumVsPt_BetaCut"), 2.f * massTOFantihe, antihePt);
             histos.fill(HIST("tracks/helium/h2TOFmass2antiHeliumVsPt_BetaCut"), 2.f * massTOFantihe * 2.f * massTOFantihe - MassHeliumVal * MassHeliumVal, antihePt);
@@ -5752,7 +5836,7 @@ struct LFNucleiBATask {
                 if (isWeakDecay) {
                   histos.fill(HIST("tracks/helium/h1HeliumSpectraTrueSec_Z2"), 2 * hePt);
                   if (enableCentrality)
-                    histos.fill(HIST("tracks/helium/h1HeliumSpectraTrueSecVsMult_Z2"), 2 * hePt);
+                    histos.fill(HIST("tracks/helium/h2HeliumSpectraTrueSecVsMult_Z2"), 2 * hePt, event.centFT0M());
                   if (outFlagOptions.makeDCAAfterCutPlots) {
                     histos.fill(HIST("tracks/helium/dca/after/hDCAxyVsPtHeliumTrueSec"), hePt, track.dcaXY());
                     histos.fill(HIST("tracks/helium/dca/after/hDCAzVsPtHeliumTrueSec"), hePt, track.dcaZ());
@@ -5982,6 +6066,9 @@ struct LFNucleiBATask {
   // MC Reco //
   /////////////
 
+  Preslice<aod::McParticles> perMCCol = aod::mcparticle::mcCollisionId;
+  SliceCache cache;
+
   // Process function that runs on the original AO2D (for the MC)
   void processMCReco(EventCandidatesMC::iterator const& event,
                      soa::Join<aod::McCollisions, aod::McCentFT0Ms> const&,
@@ -5989,10 +6076,31 @@ struct LFNucleiBATask {
                      aod::McParticles const& mcParticles,
                      o2::aod::BCsWithTimestamps const&)
   {
-    if (event.mcCollisionId() >= 0) {
-      effEvtSet.insert(event.mcCollisionId());
-      effEvtSetReady = true;
+    bool doRecoSep = true;
+
+    const bool hasTVX = event.selection_bit(aod::evsel::kIsTriggerTVX);
+    const bool hasNoTFB = event.selection_bit(aod::evsel::kNoTimeFrameBorder);
+    const bool hasNoItsRofFB = event.selection_bit(aod::evsel::kNoITSROFrameBorder);
+
+    if (evselOptions.useSel8) {
+      doRecoSep = (hasTVX && hasNoTFB);
+    } else {
+      if (evselOptions.useTVXtrigger && !hasTVX)
+        doRecoSep = false;
+      if (evselOptions.removeTFBorder && !hasNoTFB)
+        doRecoSep = false;
+      if (evselOptions.removeITSROFBorder && !hasNoItsRofFB)
+        doRecoSep = false;
     }
+
+    if (doRecoSep && event.has_mcCollision()) {
+      const int mcIdx = event.mcCollisionId();
+      if (mcIdx >= 0) {
+        effEvtSet.insert(mcIdx);
+        effEvtSetReady = true;
+      }
+    }
+
     fillHistograms<true /*MC*/, false /*Filtered*/>(event, tracks, mcParticles);
   } // CLOSING PROCESS MC RECO
   PROCESS_SWITCH(LFNucleiBATask, processMCReco, "process mc reco", false);
@@ -6004,16 +6112,35 @@ struct LFNucleiBATask {
                           aod::McParticles const& mcParticles,
                           o2::aod::BCsWithTimestamps const&)
   {
-    if (event.mcCollisionId() >= 0) {
-      effEvtSet.insert(event.mcCollisionId());
-      effEvtSetReady = true;
+    bool doRecoSep = true;
+
+    const bool hasTVX = event.selection_bit(aod::evsel::kIsTriggerTVX);
+    const bool hasNoTFB = event.selection_bit(aod::evsel::kNoTimeFrameBorder);
+    const bool hasNoItsRofFB = event.selection_bit(aod::evsel::kNoITSROFrameBorder);
+
+    if (evselOptions.useSel8) {
+      doRecoSep = (hasTVX && hasNoTFB);
+    } else {
+      if (evselOptions.useTVXtrigger && !hasTVX)
+        doRecoSep = false;
+      if (evselOptions.removeTFBorder && !hasNoTFB)
+        doRecoSep = false;
+      if (evselOptions.removeITSROFBorder && !hasNoItsRofFB)
+        doRecoSep = false;
     }
+
+    if (doRecoSep && event.has_mcCollision()) {
+      const int mcIdx = event.mcCollisionId();
+      if (mcIdx >= 0) {
+        effEvtSet.insert(mcIdx);
+        effEvtSetReady = true;
+      }
+    }
+
     fillHistograms<true /*MC*/, false /*Filtered*/>(event, tracks, mcParticles);
   } // CLOSING PROCESS MC RECO
   PROCESS_SWITCH(LFNucleiBATask, processMCRecoLfPid, "process mc reco with LfPid", false);
 
-  Preslice<aod::McParticles> perMCCol = aod::mcparticle::mcCollisionId;
-  SliceCache cache;
   // Process function that runs on the original AO2D (for the MC) with the LfPIDcalibration
   void processMCRecoLfPidEv(EventCandidatesMC const& collisions,
                             soa::Join<TrackCandidatesLfPid, aod::McTrackLabels> const&,
@@ -6042,33 +6169,57 @@ struct LFNucleiBATask {
 
         // No cut
         spectraGen.fill(HIST("LfEv/pT_nocut"), pt);
-        if (pdg == PDGHelium)
+        if (pdg == PDGHelium) {
           spectraGen.fill(HIST("LfEv/helium/pT_nocut_He"), pt);
-        if (pdg == -PDGHelium)
+          if (isPhysPrim)
+            spectraGen.fill(HIST("LfEv/helium/prim/pT_nocut_He"), pt);
+        }
+        if (pdg == -PDGHelium) {
           spectraGen.fill(HIST("LfEv/helium/pT_nocut_antiHe"), pt);
+          if (isPhysPrim)
+            spectraGen.fill(HIST("LfEv/helium/prim/pT_nocut_antiHe"), pt);
+        }
         // Trigger TVX
         if (hasTVX) {
           spectraGen.fill(HIST("LfEv/pT_TVXtrigger"), pt);
-          if (pdg == PDGHelium)
+          if (pdg == PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_TVXtrigger_He"), pt);
-          if (pdg == -PDGHelium)
+            if (isPhysPrim)
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_TVXtrigger_He"), pt);
+          }
+          if (pdg == -PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_TVXtrigger_antiHe"), pt);
+            if (isPhysPrim)
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_TVXtrigger_antiHe"), pt);
+          }
         }
         // No Time Frame Border
         if (hasNoTFB) {
           spectraGen.fill(HIST("LfEv/pT_TFrameBorder"), pt);
-          if (pdg == PDGHelium)
+          if (pdg == PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_TFrameBorder_He"), pt);
-          if (pdg == -PDGHelium)
+            if (isPhysPrim)
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_TFrameBorder_He"), pt);
+          }
+          if (pdg == -PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_TFrameBorder_antiHe"), pt);
+            if (isPhysPrim)
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_TFrameBorder_antiHe"), pt);
+          }
         }
         // No ITS ROF Frame Border
         if (hasNoItsRofFB) {
           spectraGen.fill(HIST("LfEv/pT_ITSROFBorder"), pt);
-          if (pdg == PDGHelium)
+          if (pdg == PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_ITSROFBorder_He"), pt);
-          if (pdg == -PDGHelium)
+            if (isPhysPrim)
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_ITSROFBorder_He"), pt);
+          }
+          if (pdg == -PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_ITSROFBorder_antiHe"), pt);
+            if (isPhysPrim)
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_ITSROFBorder_antiHe"), pt);
+          }
         }
         // Sel8 MC
         if (hasTVX && hasNoTFB) {
@@ -6076,12 +6227,12 @@ struct LFNucleiBATask {
           if (pdg == PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_MCsel8_He"), pt);
             if (isPhysPrim)
-              spectraGen.fill(HIST("LfEv/helium/pT_MCsel8_HePrim"), pt);
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_MCsel8_He"), pt);
           }
           if (pdg == -PDGHelium) {
             spectraGen.fill(HIST("LfEv/helium/pT_MCsel8_antiHe"), pt);
             if (isPhysPrim)
-              spectraGen.fill(HIST("LfEv/helium/pT_MCsel8_antiHePrim"), pt);
+              spectraGen.fill(HIST("LfEv/helium/prim/pT_MCsel8_antiHe"), pt);
           }
         }
         // Sel8 tag
@@ -6089,8 +6240,12 @@ struct LFNucleiBATask {
           spectraGen.fill(HIST("LfEv/pT_sel8"), pt);
           if (pdg == PDGHelium)
             spectraGen.fill(HIST("LfEv/helium/pT_sel8_He"), pt);
+          if (isPhysPrim)
+            spectraGen.fill(HIST("LfEv/helium/prim/pT_sel8_He"), pt);
           if (pdg == -PDGHelium)
             spectraGen.fill(HIST("LfEv/helium/pT_sel8_antiHe"), pt);
+          if (isPhysPrim)
+            spectraGen.fill(HIST("LfEv/helium/prim/pT_sel8_antiHe"), pt);
         }
       }
     }
@@ -6124,10 +6279,11 @@ struct LFNucleiBATask {
                     aod::McParticles const& mcParticles)
   {
     // Only events that are reconstructed
+    const int mcIdx = mcCollision.globalIndex();
     if (enableEffEvtSet) {
       if (!effEvtSetReady)
         return;
-      if (!effEvtSet.count(mcCollision.globalIndex()))
+      if (!effEvtSet.count(mcIdx))
         return;
     }
 
@@ -6139,16 +6295,21 @@ struct LFNucleiBATask {
     else
       spectraGen.fill(HIST("histGenVetxZ"), mcCollision.posZ());
 
-    for (auto const& mcParticleGen : mcParticles) {
+    // const auto& particlesInCollision = mcParticles.sliceByCached(aod::mcparticle::mcCollisionId, mcIdx, cache);
+    // const auto particlesInCollision = mcParticles.sliceBy(perMCCol, mcIdx);
+
+    for (const auto& mcParticleGen : mcParticles) {
+      if (mcParticleGen.mcCollisionId() != mcIdx)
+        continue;
+
       if (mcParticleGen.y() > kinemOptions.cfgRapidityCutHigh || mcParticleGen.y() < kinemOptions.cfgRapidityCutLow)
         continue;
 
+      const int pdgCode = mcParticleGen.pdgCode();
+      const float ptMC = mcParticleGen.pt();
       bool isPhysPrim = mcParticleGen.isPhysicalPrimary();
       bool isProdByGen = mcParticleGen.producedByGenerator();
       bool isWeakDecay = (mcParticleGen.getProcess() == TMCProcess::kPDecay);
-
-      const int pdgCode = mcParticleGen.pdgCode();
-      const float ptMC = mcParticleGen.pt();
 
       if (pdgCode == PDGPion) {
         spectraGen.fill(HIST("pion/histGenPtPion"), ptMC);
@@ -6304,10 +6465,9 @@ struct LFNucleiBATask {
         if (pdgCode == PDGHelium) {
           spectraGen.fill(HIST("helium/histGenPtHe"), ptMC);
           if (isPhysPrim) {
+            spectraGen.fill(HIST("helium/histGenPtHePrim"), ptMC);
             if (enableCentrality)
-              spectraGen.fill(HIST("helium/histGenPtHePrim"), ptMC, mcCollision.centFT0M());
-            else
-              spectraGen.fill(HIST("helium/histGenPtHePrim"), ptMC);
+              spectraGen.fill(HIST("helium/histGenPtHePrimVsMult"), ptMC, mcCollision.centFT0M());
           }
           if (!isPhysPrim && isProdByGen) {
             {
@@ -6324,10 +6484,9 @@ struct LFNucleiBATask {
         if (pdgCode == -PDGHelium) {
           spectraGen.fill(HIST("helium/histGenPtantiHe"), ptMC);
           if (isPhysPrim) {
+            spectraGen.fill(HIST("helium/histGenPtantiHePrim"), ptMC);
             if (enableCentrality)
-              spectraGen.fill(HIST("helium/histGenPtantiHePrim"), ptMC, mcCollision.centFT0M());
-            else
-              spectraGen.fill(HIST("helium/histGenPtantiHePrim"), ptMC);
+              spectraGen.fill(HIST("helium/histGenPtantiHePrimVsMult"), ptMC, mcCollision.centFT0M());
           }
           if (!isPhysPrim && isProdByGen) {
             {
@@ -6385,6 +6544,8 @@ struct LFNucleiBATask {
 
     bool isSel8Event = false;
     bool isTvxEvent = false;
+    bool isNoTFBEvent = false;
+    bool isMCSel8Event = false;
 
     // Check if there is an event reconstructed for a generated event
     for (const auto& recoColl : recoColls) {
@@ -6394,14 +6555,21 @@ struct LFNucleiBATask {
         isTvxEvent = true;
       if (recoColl.sel8())
         isSel8Event = true;
-      if (isTvxEvent && isSel8Event)
+      if (recoColl.selection_bit(aod::evsel::kNoTimeFrameBorder))
+        isNoTFBEvent = true;
+      if (isTvxEvent && isSel8Event && isNoTFBEvent)
         break; // Optimize loop
     }
+
+    if (isTvxEvent && isNoTFBEvent)
+      isMCSel8Event = true;
 
     if (isTvxEvent)
       evLossHistos.fill(HIST("evLoss/hEvent"), 1.5);
     if (isSel8Event)
       evLossHistos.fill(HIST("evLoss/hEvent"), 2.5);
+    if (isMCSel8Event)
+      evLossHistos.fill(HIST("evLoss/hEvent"), 3.5);
 
     // Loop over all the Generated level particles
     for (const auto& mcPart : mcParticles) {
@@ -6419,6 +6587,8 @@ struct LFNucleiBATask {
           evLossHistos.fill(HIST("evLoss/pt/hDeuteronTriggeredTVX"), pt);
         if (isSel8Event)
           evLossHistos.fill(HIST("evLoss/pt/hDeuteronTriggeredSel8"), pt);
+        if (isMCSel8Event)
+          evLossHistos.fill(HIST("evLoss/pt/hDeuteronTriggeredMCSel8"), pt);
       }
       if (pdg == -PDGDeuteron) {
         evLossHistos.fill(HIST("evLoss/pt/hAntiDeuteronGen"), pt);
@@ -6426,10 +6596,183 @@ struct LFNucleiBATask {
           evLossHistos.fill(HIST("evLoss/pt/hAntiDeuteronTriggeredTVX"), pt);
         if (isSel8Event)
           evLossHistos.fill(HIST("evLoss/pt/hAntiDeuteronTriggeredSel8"), pt);
+        if (isMCSel8Event)
+          evLossHistos.fill(HIST("evLoss/pt/hAntiDeuteronTriggeredMCSel8"), pt);
+      }
+      if (pdg == PDGHelium) {
+        evLossHistos.fill(HIST("evLoss/pt/hHeliumGen"), pt);
+        if (isTvxEvent)
+          evLossHistos.fill(HIST("evLoss/pt/hHeliumTriggeredTVX"), pt);
+        if (isSel8Event)
+          evLossHistos.fill(HIST("evLoss/pt/hHeliumTriggeredSel8"), pt);
+        if (isMCSel8Event)
+          evLossHistos.fill(HIST("evLoss/pt/hHeliumTriggeredMCSel8"), pt);
+      }
+      if (pdg == -PDGHelium) {
+        evLossHistos.fill(HIST("evLoss/pt/hAntiHeliumGen"), pt);
+        if (isTvxEvent)
+          evLossHistos.fill(HIST("evLoss/pt/hAntiHeliumTriggeredTVX"), pt);
+        if (isSel8Event)
+          evLossHistos.fill(HIST("evLoss/pt/hAntiHeliumTriggeredSel8"), pt);
+        if (isMCSel8Event)
+          evLossHistos.fill(HIST("evLoss/pt/hAntiHeliumTriggeredMCSel8"), pt);
       }
     }
   }
   PROCESS_SWITCH(LFNucleiBATask, processEvSgLossMC, "process MC SignLoss", false);
+
+  // EVENT LOSS, SIGNAL LOSS and EFFICIENCY CHECKER process function
+  void processMCGenLosses(
+    soa::Join<aod::McCollisions, aod::McCentFT0Ms>::iterator const& mcCollision,
+    const soa::SmallGroups<soa::Join<EventCandidatesMC, o2::aod::PVMults>>& collisions,
+    o2::aod::McParticles const& mcParticles)
+  {
+    bool isINELgt0true = pwglf::isINELgtNmc(mcParticles, 0, pdgDB);
+
+    // EVENT LOSS DENOMINATOR
+    // No cuts
+    histoGen.fill(HIST("events/hMCGen"), 0.5);
+    // Vtz cut
+    if (mcCollision.posZ() < cfgVzCutLow || mcCollision.posZ() > cfgVzCutHigh)
+      return;
+    histoGen.fill(HIST("events/hMCGen"), 1.5);
+    // INEL > 0
+    if (isINELgt0true)
+      histoGen.fill(HIST("events/hMCGen"), 2.5);
+
+    // SIGNAL LOSS DENOMINATOR
+    for (const auto& mcParticle : mcParticles) {
+      if (mcParticle.y() > kinemOptions.cfgRapidityCutHigh || mcParticle.y() < kinemOptions.cfgRapidityCutLow)
+        continue;
+
+      int pdg = mcParticle.pdgCode();
+      float pt = mcParticle.pt();
+      bool isPhysPrim = mcParticle.isPhysicalPrimary();
+
+      if (enableHe && isPhysPrim && (std::abs(pdg) == PDGHelium)) {
+        if (pdg > 0) {
+          histoGen.fill(HIST("helium/MCGen/ptGen_INEL_Prim_He"), pt);
+          if (enableCentrality)
+            histoGen.fill(HIST("helium/MCGen/ptGenVsMult_INEL_Prim_He"), pt, mcCollision.centFT0M());
+        } else {
+          histoGen.fill(HIST("helium/MCGen/ptGen_INEL_Prim_antiHe"), pt);
+          if (enableCentrality)
+            histoGen.fill(HIST("helium/MCGen/ptGenVsMult_INEL_Prim_antiHe"), pt, mcCollision.centFT0M());
+        }
+        if (isINELgt0true) {
+          if (pdg > 0) {
+            histoGen.fill(HIST("helium/MCGen/ptGen_INELgt0_Prim_He"), pt);
+            if (enableCentrality)
+              histoGen.fill(HIST("helium/MCGen/ptGenVsMult_INELgt0_Prim_He"), pt, mcCollision.centFT0M());
+          } else {
+            histoGen.fill(HIST("helium/MCGen/ptGen_INELgt0_Prim_antiHe"), pt);
+            if (enableCentrality)
+              histoGen.fill(HIST("helium/MCGen/ptGenVsMult_INELgt0_Prim_antiHe"), pt, mcCollision.centFT0M());
+          }
+        }
+      }
+    }
+
+    int recoIdxINEL = 0;
+    int recoIdxINELgt0 = 0;
+    for (const auto& collision : collisions) {
+      bool hasTVX = collision.selection_bit(aod::evsel::kIsTriggerTVX);
+      bool hasNoTFB = collision.selection_bit(aod::evsel::kNoTimeFrameBorder);
+      bool hasNoItsRofFB = collision.selection_bit(aod::evsel::kNoITSROFrameBorder);
+
+      // Check event selection
+      histoGen.fill(HIST("events/hMCReco"), 0.5);
+      if (evselOptions.useTVXtrigger && !hasTVX)
+        continue;
+      if (evselOptions.removeTFBorder && !hasNoTFB)
+        continue;
+      if (evselOptions.removeITSROFBorder && !hasNoItsRofFB)
+        continue;
+      histoGen.fill(HIST("events/hMCReco"), 1.5);
+
+      recoIdxINEL++;
+
+      if (collision.isInelGt0() && isINELgt0true) {
+        histoGen.fill(HIST("events/hMCReco"), 2.5);
+        recoIdxINELgt0++;
+      }
+
+      for (const auto& mcParticle : mcParticles) {
+        if (mcParticle.y() > kinemOptions.cfgRapidityCutHigh || mcParticle.y() < kinemOptions.cfgRapidityCutLow)
+          continue;
+
+        int pdg = mcParticle.pdgCode();
+        float pt = mcParticle.pt();
+        bool isPhysPrim = mcParticle.isPhysicalPrimary();
+
+        if (enableHe && isPhysPrim && (std::abs(pdg) == PDGHelium)) {
+          if (pdg > 0) {
+            histoGen.fill(HIST("helium/MCReco/ptGen_INEL_Prim_He"), pt);
+            if (enableCentrality)
+              histoGen.fill(HIST("helium/MCReco/ptGenVsMult_INEL_Prim_He"), pt, mcCollision.centFT0M());
+          } else {
+            histoGen.fill(HIST("helium/MCReco/ptGen_INEL_Prim_antiHe"), pt);
+            if (enableCentrality)
+              histoGen.fill(HIST("helium/MCReco/ptGenVsMult_INEL_Prim_antiHe"), pt, mcCollision.centFT0M());
+          }
+          if (recoIdxINELgt0 > 0) {
+            if (pdg > 0) {
+              histoGen.fill(HIST("helium/MCReco/ptGen_INELgt0_Prim_He"), pt);
+              if (enableCentrality)
+                histoGen.fill(HIST("helium/MCReco/ptGenVsMult_INELgt0_Prim_He"), pt, mcCollision.centFT0M());
+            } else {
+              histoGen.fill(HIST("helium/MCReco/ptGen_INELgt0_Prim_antiHe"), pt);
+              if (enableCentrality)
+                histoGen.fill(HIST("helium/MCReco/ptGenVsMult_INELgt0_Prim_antiHe"), pt, mcCollision.centFT0M());
+            }
+          }
+        }
+      }
+    }
+
+    if (recoIdxINEL < 1) {
+      return;
+    }
+
+    // EVENT LOSS NUMERATOR
+    histoGen.fill(HIST("events/hMCGenReco"), 0.5);
+    if (recoIdxINELgt0 > 0)
+      histoGen.fill(HIST("events/hMCGenReco"), 1.5);
+
+    // SIGNAL LOSS NUMERATOR
+    for (const auto& mcParticle : mcParticles) {
+      if (mcParticle.y() > kinemOptions.cfgRapidityCutHigh || mcParticle.y() < kinemOptions.cfgRapidityCutLow)
+        continue;
+
+      int pdg = mcParticle.pdgCode();
+      float pt = mcParticle.pt();
+      bool isPhysPrim = mcParticle.isPhysicalPrimary();
+
+      if (enableHe && isPhysPrim && (std::abs(pdg) == PDGHelium)) {
+        if (pdg > 0) {
+          histoGen.fill(HIST("helium/MCGenReco/ptGen_INEL_Prim_He"), pt);
+          if (enableCentrality)
+            histoGen.fill(HIST("helium/MCGenReco/ptGenVsMult_INEL_Prim_He"), pt, mcCollision.centFT0M());
+        } else {
+          histoGen.fill(HIST("helium/MCGenReco/ptGen_INEL_Prim_antiHe"), pt);
+          if (enableCentrality)
+            histoGen.fill(HIST("helium/MCGenReco/ptGenVsMult_INEL_Prim_antiHe"), pt, mcCollision.centFT0M());
+        }
+        if (recoIdxINELgt0 > 0) {
+          if (pdg > 0) {
+            histoGen.fill(HIST("helium/MCGenReco/ptGen_INELgt0_Prim_He"), pt);
+            if (enableCentrality)
+              histoGen.fill(HIST("helium/MCGenReco/ptGenVsMult_INELgt0_Prim_He"), pt, mcCollision.centFT0M());
+          } else {
+            histoGen.fill(HIST("helium/MCGenReco/ptGen_INELgt0_Prim_antiHe"), pt);
+            if (enableCentrality)
+              histoGen.fill(HIST("helium/MCGenReco/ptGenVsMult_INELgt0_Prim_antiHe"), pt, mcCollision.centFT0M());
+          }
+        }
+      }
+    }
+  }
+  PROCESS_SWITCH(LFNucleiBATask, processMCGenLosses, "process MCGen losses", false);
 };
 
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
