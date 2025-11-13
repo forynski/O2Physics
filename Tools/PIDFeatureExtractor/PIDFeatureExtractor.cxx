@@ -537,4 +537,3 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {
   return WorkflowSpec{adaptAnalysisTask<PIDFeatureExtractor>(cfgc)};
 }
- 
