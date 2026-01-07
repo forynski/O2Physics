@@ -1,4 +1,4 @@
-// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2023 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -15,14 +15,13 @@
 ///
 /// \author Fabio Catalano <fabio.catalano@cern.ch>, CERN
 
-#include "PWGHF/Core/HfHelper.h"
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
-
-#include "Tools/ML/MlResponse.h"
-
 #include "Framework/AnalysisTask.h"
 #include "Framework/HistogramRegistry.h"
 #include "Framework/runDataProcessing.h"
+
+#include "Tools/ML/MlResponse.h"
+#include "PWGHF/Core/HfHelper.h"
+#include "PWGHF/DataModel/CandidateReconstructionTables.h"
 
 using namespace o2;
 using namespace o2::analysis;
@@ -40,7 +39,7 @@ struct applyMlSelection {
   Configurable<std::vector<double>> binsPtMl{"binsPtMl", std::vector<double>{1., 36.}, "pT bin limits for ML application"};
   Configurable<std::vector<int>> cutDirMl{"cutDirMl", std::vector<int>{cuts_ml::CutSmaller, cuts_ml::CutNot, cuts_ml::CutNot}, "Whether to reject score values greater or smaller than the threshold"};
   Configurable<LabeledArray<double>> cutsMl{"cutsMl", {defaultCutsMl[0], 1, 3, {"pT bin 0"}, {"score prompt", "score non-prompt", "score bkg"}}, "ML selections per pT bin"};
-  Configurable<int> nClassesMl{"nClassesMl", 3, "Number of classes in ML model"};
+  Configurable<int8_t> nClassesMl{"nClassesMl", (int8_t)3, "Number of classes in ML model"};
   // Model file names
   Configurable<std::vector<std::string>> onnxFileNames{"onnxFileNames", std::vector<std::string>{"model_onnx.onnx"}, "ONNX file names for each pT bin (if not from CCDB full path)"};
   // Bonus: CCDB configuration (needed for ML application on the GRID)
@@ -57,23 +56,41 @@ struct applyMlSelection {
 
   // Add objects needed for ML inference
   std::vector<float> outputMl = {};
+  o2::analysis::MlResponse<float> mlResponse;
 
   // Add histograms for other BDT scores and for distributions after selections
   HistogramRegistry registry{
     "registry",
-    {{"hMassBeforeSel", "Ds candidates before selection;inv. mass (KK#pi) (GeV/#it{c}^{2});entries", {HistType::kTH1F, {{100, 1.77, 2.17}}}},
-     {"hPromptScoreBeforeSel", "Prompt score before selection;BDT first score;entries", {HistType::kTH1F, {{100, 0., 1.}}}}}};
+    {{"hMassBeforeSel", "Ds candidates before selection;inv. mass (KK#pi) (GeV/#it{c}^{2});Entries", {HistType::kTH1F, {{100, 1.77, 2.17}}}},
+     {"hPromptScoreBeforeSel", "Prompt score before selection;BDT first score;Entries", {HistType::kTH1F, {{100, 0., 1.}}}},
+     {"hNonPromptScoreBeforeSel", "Non rompt score before selection;BDT second score;Entries", {HistType::kTH1F, {{100, 0., 1.}}}},
+     {"hBkgScoreBeforeSel", "Background score before selection;BDT third score;Entries", {HistType::kTH1F, {{100, 0., 1.}}}},
+     {"hMassAfterSel", "Ds candidates after selection;inv. mass (KK#pi) (GeV/#it{c}^{2});Entries", {HistType::kTH1F, {{100, 1.77, 2.17}}}},
+     {"hPromptScoreAfterSel", "Prompt score after selection;BDT first score;Entries", {HistType::kTH1F, {{100, 0., 1.}}}},
+     {"hNonPromptScoreAfterSel", "Non rompt score after selection;BDT second score;Entries", {HistType::kTH1F, {{100, 0., 1.}}}},
+     {"hBkgScoreAfterSel", "Background score after selection;BDT third score;Entries", {HistType::kTH1F, {{100, 0., 1.}}}}}};
 
   void init(InitContext const&)
   {
     // Add histograms vs pT (only for selected candidates)
     auto vbins = (std::vector<double>)binsPtMl;
-    registry.add("hMassAfterSelVsPt", "Ds candidates;inv. mass (KK#pi) (GeV/#it{c}^{2});entries", {HistType::kTH2F, {{100, 1.77, 2.17}, {vbins, "#it{p}_{T} (GeV/#it{c})"}}});
-    registry.add("hPromptScoreAfterSelVsPt", "Prompt score after selection;BDT first score;entries", {HistType::kTH2F, {{100, 0., 1.}, {vbins, "#it{p}_{T} (GeV/#it{c})"}}});
+    registry.add("hMassAfterSelVsPt", "Ds candidates;inv. mass (KK#pi) (GeV/#it{c}^{2});Entries", {HistType::kTH2F, {{100, 1.77, 2.17}, {vbins, "#it{p}_{T} (GeV/#it{c})"}}});
+    registry.add("hPromptScoreAfterSelVsPt", "Prompt score after selection;BDT first score;Entries", {HistType::kTH2F, {{100, 0., 1.}, {vbins, "#it{p}_{T} (GeV/#it{c})"}}});
+    registry.add("hNonPromptScoreAfterSelVsPt", "Non prompt score after selection;BDT second score;Entries", {HistType::kTH2F, {{100, 0., 1.}, {vbins, "#it{p}_{T} (GeV/#it{c})"}}});
+    registry.add("hBkgScoreAfterSelVsPt", "Background score after selection;BDT third score;Entries", {HistType::kTH2F, {{100, 0., 1.}, {vbins, "#it{p}_{T} (GeV/#it{c})"}}});
 
     // Configure and initialise the ML class
+    mlResponse.configure(binsPtMl, cutsMl, cutDirMl, nClassesMl);
 
     // Bonus: retrieve the model from CCDB (needed for ML application on the GRID)
+    if (loadModelsFromCCDB) {
+      ccdbApi.init(ccdbUrl);
+      mlResponse.setModelPathsCCDB(onnxFileNames, ccdbApi, modelPathsCCDB.value, timestampCCDB);
+    } else {
+      mlResponse.setModelPathsLocal(onnxFileNames);
+    }
+
+    mlResponse.init();
   }
 
   void process(soa::Filtered<aod::HfCand3Prong> const& candidates)
@@ -112,20 +129,56 @@ struct applyMlSelection {
                                            candidate.maxNormalisedDeltaIP()};
 
       // Retrieve model output and selection outcome
+      bool isSelectedMlPiKK = mlResponse.isSelectedMl(inputFeaturesPiKK, candidate.pt(), outputMl);
 
       // Fill BDT score histograms before selection
+      registry.fill(HIST("hPromptScoreBeforeSel"), outputMl[0]);
+      registry.fill(HIST("hNonPromptScoreBeforeSel"), outputMl[1]);
+      registry.fill(HIST("hBkgScoreBeforeSel"), outputMl[2]);
 
       // Fill histograms for selected candidates
+      if (isSelectedMlPiKK) {
+        registry.fill(HIST("hMassAfterSel"), hfHelper.invMassDsToPiKK(candidate));
+        registry.fill(HIST("hPromptScoreAfterSel"), outputMl[0]);
+        registry.fill(HIST("hNonPromptScoreAfterSel"), outputMl[1]);
+        registry.fill(HIST("hBkgScoreAfterSel"), outputMl[2]);
+        registry.fill(HIST("hMassAfterSelVsPt"), hfHelper.invMassDsToPiKK(candidate), candidate.pt());
+        registry.fill(HIST("hPromptScoreAfterSelVsPt"), outputMl[0], candidate.pt());
+        registry.fill(HIST("hNonPromptScoreAfterSelVsPt"), outputMl[1], candidate.pt());
+        registry.fill(HIST("hBkgScoreAfterSelVsPt"), outputMl[2], candidate.pt());
+      }
 
       outputMl.clear(); // not necessary in this case but for good measure
 
       // Perform ML selections for other mass hypothesis (Ds -> PhiPi -> KKPi)
+      std::vector<float> inputFeaturesKKPi{candidate.cpa(),
+                                           candidate.cpaXY(),
+                                           candidate.decayLength(),
+                                           candidate.decayLengthXY(),
+                                           static_cast<float>(hfHelper.deltaMassPhiDsToKKPi(candidate)),
+                                           candidate.impactParameterXY(),
+                                           static_cast<float>(hfHelper.cos3PiKDsToKKPi(candidate)),
+                                           candidate.maxNormalisedDeltaIP()};
 
       // Retrieve model output and selection outcome
+      bool isSelectedMlKKPi = mlResponse.isSelectedMl(inputFeaturesKKPi, candidate.pt(), outputMl);
 
       // Fill BDT score histograms before selection
+      registry.fill(HIST("hPromptScoreBeforeSel"), outputMl[0]);
+      registry.fill(HIST("hNonPromptScoreBeforeSel"), outputMl[1]);
+      registry.fill(HIST("hBkgScoreBeforeSel"), outputMl[2]);
 
       // Fill histograms for selected candidates
+      if (isSelectedMlKKPi) {
+        registry.fill(HIST("hMassAfterSel"), hfHelper.invMassDsToKKPi(candidate));
+        registry.fill(HIST("hPromptScoreAfterSel"), outputMl[0]);
+        registry.fill(HIST("hNonPromptScoreAfterSel"), outputMl[1]);
+        registry.fill(HIST("hBkgScoreAfterSel"), outputMl[2]);
+        registry.fill(HIST("hMassAfterSelVsPt"), hfHelper.invMassDsToKKPi(candidate), candidate.pt());
+        registry.fill(HIST("hPromptScoreAfterSelVsPt"), outputMl[0], candidate.pt());
+        registry.fill(HIST("hNonPromptScoreAfterSelVsPt"), outputMl[1], candidate.pt());
+        registry.fill(HIST("hBkgScoreAfterSelVsPt"), outputMl[2], candidate.pt());
+      }
 
       outputMl.clear(); // not necessary in this case but for good measure
     }
